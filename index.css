@@ -1,0 +1,62 @@
+body {
+    color: #121113;
+    background-color: #EEE5D8;
+    font-family: "Google Sans Code", monospace;
+    margin: 0;
+    padding: 0;
+}
+
+.background-container {
+    position: relative;
+    isolation: isolate;
+    min-height: 100vh;
+    width: 100%;
+    background-color: #EEE5D8;
+}
+
+.background-container::before {
+    content: "";
+    position: absolute;
+    inset: -50%;
+    width: 200%;
+    height: 200%;
+
+    pointer-events: none;
+    z-index: 2;
+
+    opacity: 0.38;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)'/%3E%3C/svg%3E");
+    animation: grain-animation 0.3s step(3) infinite;
+}
+
+@keyframes grain-animation {
+    0%   { transform: translate(0, 0); }
+    33%  { transform: translate(-1%, 1%); }
+    66%  { transform: translate(1%, -1%); }
+    100% { transform: translate(0, 0); }
+}
+
+.background-container > header,
+.background-container > article {
+    position: relative;
+    z-index: 3;
+}
+
+header {
+    border: 1px solid blue;
+}
+
+.navigation-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 0px;
+}
+
+.navigation-btn > button {
+    border: none;
+    background-color: transparent;
+    font-family: "Google Sans Code", monospace;
+    cursor: pointer;
+}
