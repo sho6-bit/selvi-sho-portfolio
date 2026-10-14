@@ -1,0 +1,279 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ASCII Saturn</title>
+
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #eee5d8;
+    color: #121113;
+    font-family: monospace;
+  }
+
+  .saturn-stage {
+    width: min(95vw, 760px);
+    aspect-ratio: 1.3;
+    position: relative;
+    overflow: visible;
+    perspective: 900px;
+  }
+
+  #saturn {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+  }
+
+  .char {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: block;
+    font-family: "Google Sans Code", monospace;
+    font-size: 11px;
+    line-height: 1;
+    white-space: pre;
+    transform-origin: center;
+    will-change: transform, color, text-shadow;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 24px;
+    color: #897d6c;
+    font: 11px monospace;
+    letter-spacing: 0.12em;
+  }
+</style>
+</head>
+
+<body>
+  <div class="saturn-stage">
+    <div id="saturn"></div>
+  </div>
+
+  <div class="hint">MOVE YOUR CURSOR AROUND SATURN</div>
+
+<script>
+const stage = document.querySelector(".saturn-stage");
+const saturn = document.querySelector("#saturn");
+
+const chars = ".,:;+=*#%@";
+const points = [];
+
+const W = 760;
+const H = W / 1.3;
+const cx = W / 2;
+const cy = H / 2;
+const planetR = 105;
+const ringInner = 125;
+const ringOuter = 245;
+const tilt = -0.30;
+
+// Camera looks toward positive Z.
+function addPoint(x, y, z, char, brightness, layer) {
+  points.push({ x, y, z, char, brightness, layer });
+}
+
+// 1. Planet surface: sample latitude and longitude.
+const latSteps = 48;
+const lonSteps = 100;
+
+for (let i = 1; i < latSteps; i++) {
+  const lat = -Math.PI / 2 + Math.PI * i / latSteps;
+
+  for (let j = 0; j < lonSteps; j++) {
+    const lon = 2 * Math.PI * j / lonSteps;
+
+    const x = planetR * Math.cos(lat) * Math.cos(lon);
+    const y = planetR * Math.sin(lat);
+    const z = planetR * Math.cos(lat) * Math.sin(lon);
+
+    // Only render the visible hemisphere.
+    if (z <= 0) continue;
+
+    // Simple directional lighting.
+    const light = Math.max(
+      0,
+      (0.45 * x / planetR) +
+      (0.55 * y / planetR) +
+      (0.75 * z / planetR)
+    );
+
+    // Horizontal bands give Saturn its striped appearance.
+    const bands = 0.72 + 0.28 * Math.sin(lat * 18);
+    const brightness = Math.min(1, light * bands + 0.12);
+
+    const index = Math.min(
+      chars.length - 1,
+      Math.floor(brightness * (chars.length - 1))
+    );
+
+    addPoint(
+      cx + x,
+      cy + y,
+      z + 100,
+      chars[index],
+      brightness,
+      "planet"
+    );
+  }
+}
+
+// 2. Rings: an inclined 3D plane around the planet.
+const ringSteps = 220;
+const radialSteps = 10;
+
+for (let rIndex = 0; rIndex < radialSteps; rIndex++) {
+  const r = ringInner +
+    (ringOuter - ringInner) * rIndex / (radialSteps - 1);
+
+  for (let i = 0; i < ringSteps; i++) {
+    const a = 2 * Math.PI * i / ringSteps;
+
+    const x = r * Math.cos(a);
+    const ringY = r * Math.sin(a);
+
+    // Tilt the ring plane to create perspective.
+    const y = ringY * Math.cos(tilt);
+    const z = ringY * Math.sin(tilt);
+
+    // Slight variations create ring bands.
+    const band = Math.sin(rIndex * 2.1);
+    const brightness = 0.25 + 0.35 * (0.5 + 0.5 * band);
+    const index = Math.floor(brightness * (chars.length - 1));
+
+    // Split front/back portions.
+    const isFront = z > 0;
+
+    // Hide ring points that pass behind the planet.
+    const insidePlanet =
+      (x * x + y * y) < planetR * planetR;
+
+    if (!isFront && insidePlanet) continue;
+
+    addPoint(
+      cx + x,
+      cy + y,
+      z + (isFront ? 120 : -20),
+      chars[index],
+      brightness,
+      isFront ? "front-ring" : "back-ring"
+    );
+  }
+}
+
+// Render far layers first, then planet, then front ring.
+points.sort((a, b) => a.z - b.z);
+
+const elements = points.map(p => {
+  const el = document.createElement("span");
+  el.className = "char";
+  el.textContent = p.char;
+
+  el.style.left = `${p.x / W * 100}%`;
+  el.style.top = `${p.y / H * 100}%`;
+
+  // Back rings are faint; planet and front ring are more prominent.
+  const alpha = p.layer === "back-ring"
+    ? 0.30 + p.brightness * 0.35
+    : 0.35 + p.brightness * 0.65;
+
+  el.style.color = `rgba(100, 83, 63, ${alpha})`;
+  el.style.zIndex = Math.round(p.z + 300);
+  el.dataset.x = p.x;
+  el.dataset.y = p.y;
+  el.dataset.brightness = p.brightness;
+  el.dataset.layer = p.layer;
+
+  saturn.appendChild(el);
+  return el;
+});
+
+// 3. Cursor interaction: smooth local enlargement.
+let mouseX = -9999;
+let mouseY = -9999;
+let frame = null;
+
+stage.addEventListener("pointermove", event => {
+  const rect = stage.getBoundingClientRect();
+
+  mouseX = (event.clientX - rect.left) * W / rect.width;
+  mouseY = (event.clientY - rect.top) * H / rect.height;
+
+  if (!frame) {
+    frame = requestAnimationFrame(updateHover);
+  }
+});
+
+function updateHover() {
+  frame = null;
+
+  const radius = 85;
+
+  elements.forEach(el => {
+    const x = Number(el.dataset.x);
+    const y = Number(el.dataset.y);
+    const brightness = Number(el.dataset.brightness);
+
+    const distance = Math.hypot(mouseX - x, mouseY - y);
+    const t = Math.max(0, 1 - distance / radius);
+
+    // Smooth falloff, with no hard circular edge.
+    const intensity = t * t * (3 - 2 * t);
+    const scale = 1 + intensity * 1.5;
+
+    // Base warm beige-gray -> deep black.
+    const start = [150, 133, 111];
+    const end = [18, 17, 19];
+
+    const rgb = start.map((v, i) =>
+      Math.round(v + (end[i] - v) * intensity)
+    );
+
+    el.style.color = `rgb(${rgb.join(",")})`;
+    el.style.transform =
+      `translate(-50%, -50%) scale(${scale})`;
+
+    // Faux 3D lift: soft shadow and a tiny highlight.
+    el.style.textShadow = intensity > 0.01
+      ? `0 ${intensity * 2}px ${intensity * 3}px rgba(18,17,19,${intensity * 0.5}),
+         0 ${-intensity}px ${intensity * 2}px rgba(255,255,255,${intensity * 0.7})`
+      : "none";
+  });
+}
+
+stage.addEventListener("pointerleave", () => {
+  mouseX = -9999;
+  mouseY = -9999;
+
+  elements.forEach(el => {
+    el.style.transform = "translate(-50%, -50%) scale(1)";
+    el.style.textShadow = "none";
+
+    const brightness = Number(el.dataset.brightness);
+    const layer = el.dataset.layer;
+    const alpha = layer === "back-ring"
+      ? 0.30 + brightness * 0.35
+      : 0.35 + brightness * 0.65;
+
+    el.style.color = `rgba(100, 83, 63, ${alpha})`;
+  });
+});
+</script>
+</body>
+</html>
